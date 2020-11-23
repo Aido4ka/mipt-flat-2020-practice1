@@ -4,51 +4,30 @@
 #include <stack>
 #include <vector>
 
-bool checking_for_correctness(const std::string& regular) {
-  size_t stack_sz = 0;
-  for (const auto& c : regular) {
-    if (c == 'a' || c == 'b' || c == 'c' || c == '1') {
-      ++stack_sz;
-    } else if (c == '+' || c == '.') {
-      if (stack_sz < 2) {
-        return false;
-      }
-      --stack_sz;
-    } else if (c == '*') {
-      if (stack_sz < 1) {
-        return false;
-      }
-    } else {
-      return false;
-    }
-  }
-  return stack_sz == 1;
-}
-
 using std::vector;
 
-vector<vector<bool>> matrix_or(const vector<vector<bool>>& first_matrix,
-                               const vector<vector<bool>>& second_matrix) {
-  int size = first_matrix.size();
+vector<vector<bool>> matrix_or(const vector<vector<bool>>& lhs,
+                               const vector<vector<bool>>& rhs) {
+  int size = lhs.size();
   vector<vector<bool>> res =
       vector<vector<bool>>(size, vector<bool>(size, false));
   for (int i = 0; i < size; i++) {
     for (int j = 0; j < size; j++) {
-      if (first_matrix[i][j] || second_matrix[i][j]) res[i][j] = true;
+      res[i][j] = lhs[i][j] || rhs[i][j];
     }
   }
   return res;
 }
 
-vector<vector<bool>> matrix_and(const vector<vector<bool>>& first_matrix,
-                                const vector<vector<bool>>& second_matrix) {
-  int size = first_matrix.size();
+vector<vector<bool>> matrix_multiply(const vector<vector<bool>>& lhs,
+                                     const vector<vector<bool>>& rhs) {
+  int size = lhs.size();
   vector<vector<bool>> res =
       vector<vector<bool>>(size, vector<bool>(size, false));
   for (int i = 0; i < size; i++) {
     for (int j = 0; j < size; j++) {
       for (int k = i; k <= j; k++) {
-        if (first_matrix[i][k] && second_matrix[k][j]) {
+        if (lhs[i][k] && rhs[k][j]) {
           res[i][j] = true;
           break;
         }
@@ -58,8 +37,8 @@ vector<vector<bool>> matrix_and(const vector<vector<bool>>& first_matrix,
   return res;
 }
 
-vector<vector<bool>> matrix_star(const vector<vector<bool>>& first_matrix) {
-  int size = first_matrix.size();
+vector<vector<bool>> matrix_kleene(const vector<vector<bool>>& input_matrix) {
+  int size = input_matrix.size();
   vector<vector<bool>> res =
       vector<vector<bool>>(size, vector<bool>(size, false));
   for (int i = 0; i < size; i++) {
@@ -69,7 +48,7 @@ vector<vector<bool>> matrix_star(const vector<vector<bool>>& first_matrix) {
       }
       for (int k = i; k <= j; k++) {
         if (!res[i][k]) continue;
-        if (first_matrix[k][j]) {
+        if (input_matrix[k][j]) {
           res[i][j] = true;
           break;
         }
@@ -80,23 +59,23 @@ vector<vector<bool>> matrix_star(const vector<vector<bool>>& first_matrix) {
 }
 
 struct StackElement {
-  vector<vector<bool>> whole_;
+  vector<vector<bool>> is_some_word;
 
   StackElement() = default;
 
   StackElement(char c, const std::string& input_word) {
     size_t size = input_word.size() + 1;
-    whole_ = vector<vector<bool>>(size, vector<bool>(size, false));
+    is_some_word = vector<vector<bool>>(size, vector<bool>(size, false));
 
-    for (size_t i = 0; i < size; ++i) {
-      if (c == '1') {
-        whole_[i][i] = true;
+    if (c == '1') {
+      for (size_t i = 0; i < size; ++i) {
+        is_some_word[i][i] = true;
       }
     }
 
     for (size_t i = 0; i < input_word.size(); ++i) {
       if (input_word[i] == c) {
-        whole_[i][i + 1] = true;
+        is_some_word[i][i + 1] = true;
       }
     }
   }
@@ -104,42 +83,53 @@ struct StackElement {
 
 StackElement Union(const StackElement& left, const StackElement& right) {
   StackElement result;
-  result.whole_ = matrix_or(left.whole_, right.whole_);
+  result.is_some_word = matrix_or(left.is_some_word, right.is_some_word);
   return result;
 }
 
 StackElement Concat(const StackElement& left, const StackElement& right) {
   StackElement result;
-  result.whole_ = matrix_and(left.whole_, right.whole_);
+  result.is_some_word = matrix_multiply(left.is_some_word, right.is_some_word);
   return result;
 }
 
 StackElement Kleene(const StackElement& operand) {
   StackElement result;
-  result.whole_ = matrix_star(operand.whole_);
+  result.is_some_word = matrix_kleene(operand.is_some_word);
   return result;
 }
 
-size_t Find_max_prefix_lens(const std::string& regular,
-                            const std::string& word) {
+bool IsStackSizeValid(const std::stack<StackElement>& st, char c) {
+  switch (c) {
+    case '+':
+    case '.':
+      return st.size() >= 2;
+    case '*':
+      return st.size() >= 1;
+    case '$':
+      return st.size() == 1;
+    default:
+      return true;
+  }
+}
+
+std::pair<bool, size_t> Find_max_prefix_lens(const std::string& regular,
+                                             const std::string& word) {
   size_t answer = 0;
   std::stack<StackElement> sstack;
   StackElement left_op, right_op, operand, last_element;
   for (char symbol : regular) {
     switch (symbol) {
       case 'a':
-        sstack.emplace(symbol, word);
-        break;
       case 'b':
-        sstack.emplace(symbol, word);
-        break;
       case 'c':
-        sstack.emplace(symbol, word);
-        break;
       case '1':
         sstack.emplace(symbol, word);
         break;
       case '+':
+        if (!IsStackSizeValid(sstack, symbol)) {
+          return std::make_pair(false, 0);
+        }
         left_op = sstack.top();
         sstack.pop();
         right_op = sstack.top();
@@ -147,6 +137,9 @@ size_t Find_max_prefix_lens(const std::string& regular,
         sstack.push(Union(left_op, right_op));
         break;
       case '.':
+        if (!IsStackSizeValid(sstack, symbol)) {
+          return std::make_pair(false, 0);
+        }
         right_op = sstack.top();
         sstack.pop();
         left_op = sstack.top();
@@ -154,6 +147,9 @@ size_t Find_max_prefix_lens(const std::string& regular,
         sstack.push(Concat(left_op, right_op));
         break;
       case '*':
+        if (!IsStackSizeValid(sstack, symbol)) {
+          return std::make_pair(false, 0);
+        }
         operand = sstack.top();
         sstack.pop();
         sstack.push(Kleene(operand));
@@ -162,16 +158,19 @@ size_t Find_max_prefix_lens(const std::string& regular,
         break;
     }
   }
+  if (!IsStackSizeValid(sstack, '$')) {
+    return std::make_pair(false, 0);
+  }
   last_element = sstack.top();
 
-  for (size_t i = 0; i < last_element.whole_.size(); ++i) {
-    if (last_element.whole_[0][i]) {
+  for (size_t i = 0; i < last_element.is_some_word.size(); ++i) {
+    if (last_element.is_some_word[0][i]) {
       if (i > answer) {
         answer = i;
       }
     }
   }
-  return answer;
+  return std::make_pair(true, answer);
 }
 
 int main() {
@@ -179,10 +178,10 @@ int main() {
   std::cin >> regular;
   std::string word;
   std::cin >> word;
-
-  if (checking_for_correctness(regular)) {
-    std::cout << Find_max_prefix_lens(regular, word) << std::endl;
+  auto result = Find_max_prefix_lens(regular, word);
+  if (result.first) {
+    std::cout << result.second << std::endl;
   } else {
-    std::cout << "INF\n";
+    std::cout << "ERROR\n";
   }
 }
